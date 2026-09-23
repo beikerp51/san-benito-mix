@@ -5,11 +5,14 @@ const DB_FILE = path.resolve(process.cwd(), 'database', 'central_db.json');
 const syncSseClients: Set<any> = new Set();
 
 // SSE keepalive ping every 10 seconds to keep mobile and proxy connections alive
-setInterval(() => {
+const syncKeepAliveTimer = setInterval(() => {
   if (syncSseClients.size > 0) {
     broadcastSyncEvent({ type: 'ping', time: Date.now() });
   }
 }, 10000);
+if (syncKeepAliveTimer?.unref) {
+  syncKeepAliveTimer.unref();
+}
 
 const DEFAULT_OFFICIAL_ACCOUNTS = [
   { id: 1, bankName: 'Banesco', accountType: 'Corriente', currency: 'VES', balance: 0, cardLast4: '0000', color: '#007953', icon: '🏦', order: 0 },
