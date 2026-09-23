@@ -385,8 +385,6 @@ export async function cleanupSyncedItems(olderThanMs: number = 24 * 60 * 60 * 10
   return ids.length;
 }
 
-// ─── Local Server Sync (Multidispositivo en Red / LAN) ──────────
-
 async function pushItemToLocalServer(item: any): Promise<void> {
   const res = await fetch('/api/sync/push', {
     method: 'POST',
@@ -396,6 +394,7 @@ async function pushItemToLocalServer(item: any): Promise<void> {
   if (!res.ok) {
     throw new Error(`Servidor local respondió con status ${res.status}`);
   }
+  lastKnownDbTimestamp = Date.now();
 }
 
 export async function pullFromLocalServer(): Promise<number> {
@@ -436,112 +435,108 @@ export async function pullFromLocalServer(): Promise<number> {
   }
 }
 
-let localEventSource: EventSource | null = null;
-let sseReconnectTimer: any = null;
+let lastKnownDbTimestamp = 0;
+let isHeartbeatRunning = false;
 
-export function initLocalServerSync(): void {
-  if (typeof window === 'undefined') return;
-
-  if (localEventSource) {
-    if (localEventSource.readyState === EventSource.OPEN) return;
-    try {
-      localEventSource.close();
-    } catch {}
-    localEventSource = null;
-  }
+export async function checkSyncStatus(): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (isHeartbeatRunning) return;
+  isHeartbeatRunning = true;
 
   try {
-    localEventSource = new EventSource('/api/sync/stream');
+    const res = await fetch('/api/sync/status', {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!res.ok) return;
+    const status = await res.json();
+    if (!status) return;
 
-    localEventSource.onopen = () => {
-      console.log('[LocalSync] ✅ Canal de sincronización SSE en tiempo real activo.');
-    };
-
-    localEventSource.onmessage = async (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-
-        // Keepalive / Ping desde el servidor
-        if (payload.type === 'ping' || payload.type === 'connected') {
-          return;
-        }
-
-        // 1. Manejar cambio global de tasa fijada por el Master
-        if (payload.type === 'rate_source_changed' && payload.activeSource) {
-          await useExchangeRateStore.getState().applyServerActiveSource(payload.activeSource);
-          console.log(`[LocalSync] ⚡ Tasa fijada por el Master sincronizada en tiempo real: ${payload.activeSource}`);
-        }
-
-        if (payload.type === 'sync_update' && payload.payload) {
-          const items = Array.isArray(payload.payload) ? payload.payload : [payload.payload];
-          for (const item of items) {
-            const tableObj = (db as any)[item.table];
-            if (!tableObj) continue;
-
-            const data = item.data ? (typeof item.data === 'string' ? JSON.parse(item.data) : item.data) : null;
-            const targetId = item.recordId || data?.id;
-
-            if (item.operation === 'delete' && targetId) {
-              await tableObj.delete(targetId);
-            } else if (data) {
-              await tableObj.put({ ...data, id: targetId });
-            }
-          }
-
-          // Disparar evento global para que todas las vistas de React se refresquen al instante (0 segundos)
-          window.dispatchEvent(new CustomEvent('sbm:sync', { detail: payload.payload }));
-          window.dispatchEvent(new CustomEvent('sbm:sync_status', { detail: { status: 'synced', time: Date.now(), source: 'remote' } }));
-          console.log(`[LocalSync] ⚡ Actualización recibida de otro dispositivo en la red`);
-        }
-      } catch (err) {
-        console.warn('[LocalSync] Error procesando evento de red:', err);
+    // 1. Tasa activa sincronizada en tiempo real (0 recargas de página)
+    if (
+      status.activeRateSource &&
+      ['bcv_usd', 'bcv_eur', 'binance_usdt'].includes(status.activeRateSource)
+    ) {
+      const currentActive = useExchangeRateStore.getState().activeSource;
+      if (currentActive !== status.activeRateSource) {
+        console.log(`[SyncEngine] ⚡ Tasa cambiada remotamente a: ${status.activeRateSource}`);
+        await useExchangeRateStore.getState().applyServerActiveSource(status.activeRateSource);
       }
-    };
+    }
 
-    localEventSource.onerror = () => {
-      try {
-        localEventSource?.close();
-      } catch {}
-      localEventSource = null;
-
-      // Reintentar automáticamente en 3 segundos si el dispositivo está en línea
-      if (!sseReconnectTimer) {
-        sseReconnectTimer = setTimeout(() => {
-          sseReconnectTimer = null;
-          if (typeof navigator !== 'undefined' && navigator.onLine) {
-            initLocalServerSync();
-          }
-        }, 3000);
+    // 2. Base de datos actualizada remotamente (0 recargas de página)
+    if (status.lastUpdated && status.lastUpdated > lastKnownDbTimestamp) {
+      if (lastKnownDbTimestamp > 0) {
+        console.log(`[SyncEngine] ⚡ Cambios detectados en servidor central (timestamp: ${status.lastUpdated})`);
+        await pullFromLocalServer();
       }
-    };
-  } catch (e) {
-    console.warn('[LocalSync] No se pudo inicializar EventSource local:', e);
+      lastKnownDbTimestamp = status.lastUpdated;
+    }
+  } catch {
+    // Red no disponible temporalmente
+  } finally {
+    isHeartbeatRunning = false;
   }
+}
+
+export function initLocalServerSync(): void {
+  checkSyncStatus().catch(() => {});
 }
 
 // ─── Auto-start periodic sync ───────────────────────────────────
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
-export function startPeriodicSync(intervalMs: number = 8000): void {
-  // 1. Sincronización con el servidor central de la red local
-  initLocalServerSync();
-  pullFromLocalServer().catch(() => {});
+export function startPeriodicSync(intervalMs: number = 1500): void {
+  // 1. Sincronización inicial
+  pullFromLocalServer()
+    .then(() => {
+      fetch('/api/sync/status', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((s) => {
+          if (s?.lastUpdated) lastKnownDbTimestamp = s.lastUpdated;
+        })
+        .catch(() => {});
+    })
+    .catch(() => {});
 
   // 2. Sincronización con Supabase (si está configurado)
   initRealtimeSubscription();
   pullAllFromCloud().catch(() => {});
-
   processQueue().catch(() => {});
 
-  if (syncInterval) return;
-  syncInterval = setInterval(() => {
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      processQueue().catch(() => {});
-      // Respaldo de sondeo en caso de que SSE esté pausado en móvil en segundo plano
-      pullFromLocalServer().catch(() => {});
-    }
-  }, intervalMs);
+  // 3. Heartbeat reactivo ultra-rápido cada 1.5s para sincronización en vivo
+  if (!heartbeatInterval) {
+    heartbeatInterval = setInterval(() => {
+      checkSyncStatus().catch(() => {});
+    }, intervalMs);
+  }
+
+  // 4. Procesar cola de cambios locales pendientes cada 3s
+  if (!syncInterval) {
+    syncInterval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        processQueue().catch(() => {});
+      }
+    }, 3000);
+  }
+
+  // 5. Sincronización inmediata al volver a la app o encender la pantalla
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        checkSyncStatus().catch(() => {});
+        processQueue().catch(() => {});
+      }
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => {
+      checkSyncStatus().catch(() => {});
+    });
+  }
 }
 
 export function stopPeriodicSync(): void {
@@ -549,13 +544,14 @@ export function stopPeriodicSync(): void {
     clearInterval(syncInterval);
     syncInterval = null;
   }
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
   if (realtimeChannel) {
     realtimeChannel.unsubscribe();
     realtimeChannel = null;
   }
-  if (localEventSource) {
-    localEventSource.close();
-    localEventSource = null;
-  }
 }
+
 

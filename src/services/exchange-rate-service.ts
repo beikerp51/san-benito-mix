@@ -440,22 +440,46 @@ async function saveRate(source: RateSource, rate: number): Promise<void> {
 
 let isInitialized = false;
 
-export function startRatePolling(intervalMs: number = 20000): void {
+export function startRatePolling(intervalMs: number = 2000): void {
   if (isInitialized) return;
   isInitialized = true;
 
   const store = useExchangeRateStore.getState();
 
-  // 1. Connect to SSE Live Stream
-  store.initLiveStream();
-
-  // 2. Initial fetch
+  // 1. Initial fetch
   store.fetchRates();
 
-  // 3. Background periodic heartbeat (every 20s)
-  setInterval(() => {
-    if (navigator.onLine && !useExchangeRateStore.getState().isLiveStreaming) {
-      useExchangeRateStore.getState().fetchRates();
+  // 2. High-speed reactive polling every 2s for rates and active source
+  setInterval(async () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const res = await fetch('/api/rates', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(2000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (
+            data?.activeSource &&
+            ['bcv_usd', 'bcv_eur', 'binance_usdt'].includes(data.activeSource)
+          ) {
+            if (useExchangeRateStore.getState().activeSource !== data.activeSource) {
+              console.log(`[RatePolling] ⚡ Tasa activa actualizada desde el servidor: ${data.activeSource}`);
+              await useExchangeRateStore.getState().applyServerActiveSource(data.activeSource);
+            }
+          }
+          if (data?.bcv_usd) {
+            useExchangeRateStore.setState((state) => ({
+              rates: {
+                bcv_usd: parseFloat(Number(data.bcv_usd).toFixed(2)),
+                bcv_eur: parseFloat(Number(data.bcv_eur).toFixed(2)),
+                binance_usdt: parseFloat(Number(data.binance_usdt).toFixed(2)),
+              },
+              lastUpdate: data.lastUpdated || Date.now(),
+            }));
+          }
+        }
+      } catch {}
     }
   }, intervalMs);
 }

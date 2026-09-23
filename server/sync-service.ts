@@ -89,6 +89,21 @@ export function broadcastSyncEvent(event: any): void {
 export function handleSyncMiddleware(req: any, res: any): boolean {
   const url = req.url?.split('?')[0];
 
+  // 0. GET /api/sync/status (Ligero, chequeo en 5ms de cambios y tasa activa)
+  if (url === '/api/sync/status' && req.method === 'GET') {
+    const data = loadCentralDb();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.end(
+      JSON.stringify({
+        lastUpdated: data?.lastUpdated || 0,
+        activeRateSource: data?.activeRateSource || 'bcv_usd',
+      })
+    );
+    return true;
+  }
+
   // 1. GET /api/sync/pull (Devuelve toda la base de datos central)
   if (url === '/api/sync/pull' && req.method === 'GET') {
     const data = loadCentralDb();
