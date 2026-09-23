@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://wool-identity-watershed-edinburgh.trycloudflare.com/api/:path*"
+    },
+    {
       "source": "/sw.js",
       "destination": "/sw.js"
     },
