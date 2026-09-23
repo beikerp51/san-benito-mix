@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "rates:server": "node server/standalone.js"
+    "rates:server": "node server/standalone.js",
+    "deploy": "vercel deploy --prod --archive=tgz --yes"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
