@@ -1,0 +1,103 @@
+{
+  "products": [],
+  "accounts": [
+    {
+      "id": 1,
+      "bankName": "Banesco",
+      "accountType": "Corriente",
+      "currency": "VES",
+      "balance": 0,
+      "cardLast4": "0000",
+      "color": "#007953",
+      "icon": "🏦",
+      "order": 0
+    },
+    {
+      "id": 2,
+      "bankName": "Banco de Venezuela",
+      "accountType": "Corriente",
+      "currency": "VES",
+      "balance": 0,
+      "cardLast4": "0000",
+      "color": "#003366",
+      "icon": "🏛️",
+      "order": 1
+    },
+    {
+      "id": 3,
+      "bankName": "Binance",
+      "accountType": "Crypto",
+      "currency": "USDT",
+      "balance": 0,
+      "cardLast4": "----",
+      "color": "#F0B90B",
+      "icon": "₿",
+      "order": 2
+    },
+    {
+      "id": 4,
+      "bankName": "Banco Nacional de Crédito",
+      "accountType": "Corriente",
+      "currency": "VES",
+      "balance": 0,
+      "cardLast4": "0000",
+      "color": "#005C42",
+      "icon": "💳",
+      "order": 3
+    },
+    {
+      "id": 5,
+      "bankName": "Banco Mercantil",
+      "accountType": "Corriente",
+      "currency": "VES",
+      "balance": 0,
+      "cardLast4": "0000",
+      "color": "#002868",
+      "icon": "🏦",
+      "order": 4
+    },
+    {
+      "id": 6,
+      "bankName": "Banco Digital de los Trabajadores",
+      "accountType": "Corriente Digital",
+      "currency": "VES",
+      "balance": 0,
+      "cardLast4": "0000",
+      "color": "#0D1B2A",
+      "icon": "⚡",
+      "order": 5
+    },
+    {
+      "id": 7,
+      "bankName": "Efectivo en Bolívares",
+      "accountType": "Caja Chica",
+      "currency": "VES",
+      "balance": 0,
+      "cardLast4": "----",
+      "color": "#0F4C3A",
+      "icon": "🇻🇪",
+      "order": 6
+    },
+    {
+      "id": 8,
+      "bankName": "Efectivo Divisas",
+      "accountType": "Caja Fuerte",
+      "currency": "USD",
+      "balance": 0,
+      "cardLast4": "----",
+      "color": "#064E3B",
+      "icon": "💵",
+      "order": 7
+    }
+  ],
+  "transactions": [],
+  "clients": [],
+  "losses": [],
+  "dispatches": [],
+  "productionBatches": [],
+  "cashClosures": [],
+  "exchangeRates": [],
+  "users": [],
+  "settings": [],
+  "lastUpdated": 1790127919398
+}
